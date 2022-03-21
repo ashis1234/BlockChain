@@ -28,6 +28,12 @@ contract Vaccine {
         Hospital storage hospital = HospitalsID[hospitalId]; // Fetch associated hospital
         hospital.isValidated = true; // Validate hospital
     }
+
+    function validateManufacturer(uint Id) public onlyGovernment {
+        Manufacturer storage manufacturer = ManufacturersID[Id];
+        manufacturer.isValidated = true; // Validate hospital
+    }
+    
     
     // Custom modifier to enable only the government to access certain data
     modifier onlyGovernment() {
@@ -77,6 +83,7 @@ contract Vaccine {
         uint gstNo;
         uint doseCost;
         bool isCreated;
+        bool isValidated;
     }
     
     struct Citizen {
@@ -113,15 +120,28 @@ contract Vaccine {
         citizenCount++; // Increment identifier for subsequent creation
     }
     
-    function bookAppointment(string memory date, uint hospitalID, address payable hospitalAddress, string memory vaccine) public payable {
+    function bookAppointment(string memory date, uint hospitalID) public payable {
+        address payable hospitalAddress = getHospitalAddress(hospitalID);
         require(CitizensAddress[msg.sender].vaccinated == false, "You are already vaccinated!");
         require(HospitalsID[Hospitals[hospitalAddress].id].stock >= 1, "Not enough stock");
+        string memory vaccine = HospitalsID[hospitalID].vaccine;
         Appointment memory appointment = Appointment(appointmentCount, date, msg.sender, CitizensAddress[msg.sender].id, hospitalAddress, 
-        hospitalID, vaccine, CitizensAddress[msg.sender].doses+1, false); // Create new appointment
-        Appointments[appointmentCount] = appointment; // Pass instance to mapping
-        appointmentCount++; // Increment identifier for subsequent creation
+        hospitalID, vaccine, CitizensAddress[msg.sender].doses+1, false); 
+
+        Appointments[appointmentCount] = appointment; 
+        appointmentCount++; 
         
         hospitalAddress.transfer(msg.value); // Pay for vaccine
+    }
+
+     function getHospitalAddress(uint hospitalsID) public view returns (address payable){
+        Hospital memory hospital = HospitalsID[hospitalsID];
+        return hospital.owner;
+    }
+
+    function getManufactruerAddress(uint id) public view returns (address payable){
+        Manufacturer memory manufacturer = ManufacturersID[id];
+        return manufacturer.owner;
     }
     
     
@@ -136,12 +156,14 @@ contract Vaccine {
         hospitalCount++; // Increment identifier for subsequent creation
     }
     
-    function vaccinateCitizen(uint appointmentId, uint citizenID) public {
+    function vaccinateCitizen(uint appointmentId) public {
         Hospital storage hospital = Hospitals[msg.sender]; // Fetch associated hospital
         
         require(msg.sender == hospital.owner, "You are not authorised"); // Only authorised hospitals can vaccinate people
         require(HospitalsID[hospital.id].isValidated == true , "Hospital not authorised by government"); // Only authorised hospitals can vaccinate people
-        
+        Appointment storage appointment = Appointments[appointmentId];
+        uint citizenID = appointment.citizenId;
+
         Citizen storage citizen = Citizens[citizenID]; // Fetch associated citizen
         citizen.vaccine = hospital.vaccine; // Set vaccine
         citizen.doses = citizen.doses + 1; // Increment doses
@@ -160,24 +182,21 @@ contract Vaccine {
         Appointments[appointmentId].vaccinated = true; // Set appointment as completed
     }
     
-    function placeVaccineOrder(address payable manufacturerAddress, uint quantity) payable public {
-        Manufacturer memory manufacturer = ManufacturersID[Manufacturers[manufacturerAddress].id];
-        require(quantity <= manufacturer.capacity, "Not enough quantity available");
-        manufacturer.capacity = manufacturer.capacity - quantity;
-
-        Manufacturer memory manufacturerAdd = Manufacturers[manufacturerAddress];
-        manufacturerAdd.capacity = manufacturerAdd.capacity - quantity;
-
+    function placeVaccineOrder(uint manufacturersID, uint quantity) payable public {
+        Manufacturer storage manufacturer = ManufacturersID[manufacturersID];
+        address payable manufacturerAddress = manufacturer.owner;
         Hospital storage hospital = HospitalsID[Hospitals[msg.sender].id];
+        require(quantity <= manufacturer.capacity, "Not enough quantity available");
+        require(manufacturer.isValidated==false,"Manufacturer Not Validated");        
+        manufacturer.capacity = manufacturer.capacity - quantity;
         hospital.stock = hospital.stock + quantity;
-        
         manufacturerAddress.transfer(msg.value); 
     }
     
     
 
     function registerManufacturer(string memory name, string memory vaccine, uint gstNo, uint doseCost) public {
-        Manufacturer memory manufacturer = Manufacturer(manufacturerCount, name, msg.sender, vaccine, 0, gstNo, doseCost, true); // Create new instance variable 
+        Manufacturer memory manufacturer = Manufacturer(manufacturerCount, name, msg.sender, vaccine, 0, gstNo, doseCost, true,false); // Create new instance variable 
         Manufacturers[msg.sender] = manufacturer; // Pass instance to mapping 
         ManufacturersID[manufacturerCount] = manufacturer; // Pass instance to mapping 
         manufacturerCount++; // Increment identifier for subsequent creation
